@@ -76,44 +76,32 @@ Normalize $R$’s payoffs:
 - Fixed cost of fighting: $k_R>0$.
 
 Let $\Delta_R \equiv v_R - \ell_R > 0$. Given win probability $q$, the war payoff is
-$$
-u_R(\text{war at } q) \;=\; \ell_R - k_R + q\,\Delta_R.
-$$
+$u_R(\text{war at } q) \;=\; \ell_R - k_R + q\,\Delta_R.$
 
 With alliance type $t$:
 - If $A$ stays out: win prob $q_U(t)$.
 - If $A$ intervenes: win prob $q_I(t) = q_U(t) - d(t)$.
 
 Rebels’ **ex‑ante** win probability (integrating over $A$’s intervention) is
-$$
-q^*(t) \;\equiv\; \mathbb{E}[q \mid t]
+$q^*(t) \;\equiv\; \mathbb{E}[q \mid t]
 \;=\; (1-\pi(t))\,q_U(t) + \pi(t)\,q_I(t)
-\;=\; q_U(t) - \pi(t)\,d(t).
-$$
+\;=\; q_U(t) - \pi(t)\,d(t).$
 
 ---
 
 ## 4) Rebel decision and central threshold
 
 $R$ attacks iff its expected war payoff exceeds the status quo:
-$$
-\ell_R - k_R + q^*(t)\,\Delta_R \;\ge\; s(t).
-$$
+$\ell_R - k_R + q^*(t)\,\Delta_R \;\ge\; s(t)$
 
 Define the “required” win probability threshold
-$$
-\hat{q}(t) \;\equiv\; \frac{s(t) - \ell_R + k_R}{\Delta_R}.
-$$
+$\hat{q}(t) \;\equiv\; \frac{s(t) - \ell_R + k_R}{\Delta_R}.$
 
 Then **attack** occurs iff
-$$
-q^*(t) \;=\; q_U(t) - \pi(t)\,d(t) \;\ge\; \hat{q}(t).
-$$
+$q^*(t) \;=\; q_U(t) - \pi(t)\,d(t) \;\ge\; \hat{q}(t).$
 
 **Deterrence condition (equivalent):**
-$$
-\boxed{\;\pi(t) \;\ge\; \frac{q_U(t) - \hat{q}(t)}{d(t)}\;}
-$$
+$\boxed{\;\pi(t) \;\ge\; \frac{q_U(t) - \hat{q}(t)}{d(t)}\;}$
 
 **Interpretation.** Alliances deter via: (1) raising $\pi(t)$; (2) raising $d(t)$; (3) lowering $q_U(t)$; (4) raising $s(t)$ (which raises $\hat{q}$).
 
@@ -125,9 +113,7 @@ Let the alliance’s variable intervention cost $c$ be private, with CDF $F$ on 
 Signing type $t$ creates a reputational/legal cost $r(t)$ for **not** intervening (increasing in treaty strength) and a strategic benefit $b$ to preventing a rebel victory.
 
 Upon attack, $A$ intervenes iff $c \le r(t)+b$. Thus
-$$
-\pi(t) \;=\; F\!\big(r(t)+b\big), \qquad r'(t) > 0.
-$$
+$\pi(t) \;=\; F\!\big(r(t)+b\big), \qquad r'(t) > 0.$
 Stronger treaties raise $r(t)$ and thus increase $\pi(t)$ *endogenously*, delivering credible commitments.
 
 ---
@@ -135,10 +121,8 @@ Stronger treaties raise $r(t)$ and thus increase $\pi(t)$ *endogenously*, delive
 ## 6) Government’s choice of alliance type
 
 Let $L_G^I$ and $L_G^U$ be $G$’s expected losses if attacked with/without intervention (these embed $q_I,q_U$). The government’s expected loss under $t$ is
-$$
-\mathrm{EL}_G(t)
-= k_G(t) \;+\; \Pr(\text{attack}\mid t)\,\big[\,\pi(t)L_G^I + (1-\pi(t))L_G^U\,\big].
-$$
+$\mathrm{EL}_G(t)
+= k_G(t) \;+\; \Pr(\text{attack}\mid t)\,\big[\,\pi(t)L_G^I + (1-\pi(t))L_G^U\,\big].$
 
 The optimal $t$ trades off **treaty costs** $k_G(t)$ against lowering $\Pr(\text{attack}\mid t)$ via the deterrence condition.  
 If $T$ is totally ordered so that $t$ increases $\pi$ and $d$ and (weakly) lowers $q_U$ or raises $s$, then a **cutoff type** $t^\star$ exists: all $t \ge t^\star$ deter; $t < t^\star$ do not.
@@ -200,34 +184,26 @@ Pick $(v_R,\ell_R,k_R)=(1,0,0.1) \Rightarrow \Delta_R=1,\ \hat{q}(t)=s(t)+0.1$. 
 ## Endogenous domestic policy: repression & concessions
 
 Let
-$$
-q_U(t,r,y)=q_U^0(t)-\phi_r(t)\,r-\phi_y(t)\,y,
+$q_U(t,r,y)=q_U^0(t)-\phi_r(t)\,r-\phi_y(t)\,y,
 \qquad
 s(t,r,y)=s^0(t)-\psi_r(t)\,r+\psi_y(t)\,y,
-$$
 with costs $C_G(r,y;t)=\tfrac12 c_r(t)r^2+\tfrac12 c_y(t)y^2$.
 
 Define $A_r\equiv \phi_r-\psi_r/\Delta_R$, $A_y\equiv \phi_y+\psi_y/\Delta_R$, and
-$$
-D(r,y;t)
+$D(r,y;t)
 = \big(q_U^0(t)-\pi(t)d(t)\big)
 - \frac{s^0(t)-\ell_R+k_R}{\Delta_R}
-- A_r r - A_y y.
-$$
+- A_r r - A_y y.$
 
 - If $D_0\equiv D(0,0;t)\le 0$: no attack at $(r,y)=(0,0)$.
 - If $D_0>0$ and at least one of $A_r,A_y>0$, the **minimal‑cost deterring policy** solves
-$$
-\min_{r,y\ge 0}\ \tfrac12(c_r r^2+c_y y^2)
+$\min_{r,y\ge 0}\ \tfrac12(c_r r^2+c_y y^2)
 \quad\text{s.t.}\quad
-A_r r + A_y y \ge D_0,
-$$
+A_r r + A_y y \ge D_0,$
 with solution
-$$
-r^*=\lambda \frac{A_r}{c_r},\quad
+$r^*=\lambda \frac{A_r}{c_r},\quad
 y^*=\lambda \frac{A_y}{c_y},\quad
 \lambda=\frac{D_0}{A_r^2/c_r + A_y^2/c_y},\quad
-C^*=\tfrac12\,\frac{D_0^2}{A_r^2/c_r + A_y^2/c_y}.
-$$
+C^*=\tfrac12\,\frac{D_0^2}{A_r^2/c_r + A_y^2/c_y}.$
 
 $G$ implements $(r^*,y^*)$ iff $C^*\le L(t)\equiv \pi(t)L_G^I+(1-\pi(t))L_G^U$.
