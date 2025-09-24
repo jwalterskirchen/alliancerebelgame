@@ -22,7 +22,7 @@ streamlit run streamlit_app.py
 - **Contest success:** \( p_R(\tau)=\frac{\rho(d)}{\rho(d)+\tau},\;\rho(d)=\sqrt{\tfrac{v_R c_G(d)}{v_G c_R}} \)
 - **Rebel contest payoff:** \( W_R(\tau;d)=v_R\,\frac{\rho(d)\left(\rho(d)+\tfrac12\tau\right)}{(\rho(d)+\tau)^2} \)
 - **Ally’s net advantage to intervene:** \( \Delta_A(\theta,d)=W_A[p_R(1)-p_R(\lambda(\theta,d))]+F(d) \)
-- **Intervention rule:** \( I^*(\theta,d)=\mathbbm{1}\{\Delta_A(\theta,d)\ge K_A(\theta)\} \), so \( \pi(d)=\mu I^*(H,d)+(1-\mu)I^*(L,d) \)
+- **Intervention rule:** \( I^*(\theta,d)=\mathbf{1}\{\Delta_A(\theta,d)\ge K_A(\theta)\} \), so \( \pi(d)=\mu I^*(H,d)+(1-\mu)I^*(L,d) \)
 - **Rebels’ decision:** rebel iff \( \mathbb E[U_R\mid m{=}1,d]\ge S \), with
   \( \mathbb E[U_R\mid m{=}1,d]=(1-\pi)W_R(1;d)+\pi\,\overline W_R^{\,I}(d)-m_0(d)+g(d) \).  
   When \(W_R(1;d)>\overline W_R^{\,I}(d)\), this yields the deterrence threshold
