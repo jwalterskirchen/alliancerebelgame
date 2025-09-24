@@ -1,7 +1,7 @@
 
-# Rebel–Alliance Deterrence Model — v3 (Streamlit)
+# Rebel–Alliance Deterrence Model — v3.1 (Streamlit)
 
-Adds **2D Explore** heatmaps and fixes to reliability/effectiveness overrides.
+**Fix:** Scenario Lab no longer assumes you selected exactly three axes. It now uses `itertools.product` so 1–3 axes work without indexing errors.
 
 ## Run
 ```bash
@@ -11,7 +11,3 @@ streamlit run streamlit_app.py
 
 ## Deploy
 Push to GitHub and point Streamlit Cloud at `streamlit_app.py`.
-
-## New
-- Heatmaps for π(d), π*, and rebellion when varying **two** characteristics at once (e.g., Reliability × Institutionalization).
-- Reliability and λ (via l0) now properly override in Explore and Scenario Lab.

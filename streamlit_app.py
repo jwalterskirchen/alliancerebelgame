@@ -1,6 +1,6 @@
 
 # streamlit_app.py
-# Rebel–Alliance Deterrence Model: v3 with 2D Explore + fixes
+# Rebel–Alliance Deterrence Model: v3.1 (fixes Scenario Lab indexing via product)
 # License: MIT
 
 import streamlit as st
@@ -9,6 +9,7 @@ import pandas as pd
 import json
 import math
 import matplotlib.pyplot as plt
+from itertools import product
 
 st.set_page_config(
     page_title="Rebel–Alliance Deterrence Model",
@@ -108,7 +109,7 @@ def compute_all(
     else:
         WR_Ibar = mu * WH + (1 - mu) * WL
 
-    m0 = m0_cost(m0_base, P, mP)
+    m0 = m0_cost(m0_base, P, 0.5)
     EU_m1 = (1 - pi) * W1 + pi * WR_Ibar - m0 + g_shift
 
     denom = W1 - WR_Ibar
@@ -171,8 +172,8 @@ def heatmap(Z, xvals, yvals, title, xlabel, ylabel):
     return fig
 
 # ---------------------- UI ----------------------
-st.title("🛡️ Rebel–Alliance Deterrence Model (v3)")
-st.caption("Adds a 2D Explore tab + fixes reliability/effectiveness overrides.")
+st.title("🛡️ Rebel–Alliance Deterrence Model (v3.1)")
+st.caption("Adds 2D Explore and fixes Scenario Lab indexing (no more list index errors).")
 
 tabs = st.tabs([
     "1) Overview",
@@ -187,14 +188,13 @@ tabs = st.tabs([
 
 # ---------------------- Tab 1: Overview ----------------------
 with tabs[0]:
-    st.subheader("What’s new in v3")
+    st.subheader("What’s new in v3.1")
     st.markdown(
         """
-        - **2D Explore**: vary two characteristics at once and view heatmaps for π(d), π*, and the rebellion prediction.  
-        - **Fixes**: reliability and effectiveness overrides now correctly affect calculations in Explore and Scenario Lab.
+        - **Scenario Lab** fixed: uses `itertools.product` so 1–3 chosen axes work without indexing errors.  
+        - 2D Explore still provides heatmaps for π(d), π*, and rebellion.
         """
     )
-    st.write("Set baseline in **Inputs**. Use **Explore (1D)** or **Explore (2D)** to analyze deterrence geometry.")
 
 # ---------------------- Tab 2: Model ----------------------
 with tabs[1]:
@@ -256,9 +256,7 @@ with tabs[2]:
         secrecy_blur = st.slider("Secrecy belief blur toward μ", 0.0, 1.0, 0.3, 0.05)
         rel_F_boost = st.slider("Reliability boost to F", 0.0, 2.0, 1.0, 0.05)
         rel_K_cut = st.slider("Reliability cut to K_A", 0.0, 2.0, 0.5, 0.05)
-        # We fold 'reliability' into F and K_A downstream
 
-    # compute wrapper with overrides
     def compute_current(
         secret_flag=None,
         reliability_override=None,
@@ -272,7 +270,6 @@ with tabs[2]:
         sec = secret if secret_flag is None else secret_flag
         rel = reliability if reliability_override is None else reliability_override
 
-        # apply reliability to F coefficients and K baselines
         F0_eff = F0
         fL_eff = fL * (1.0 + rel * rel_F_boost)
         fP_eff = fP * (1.0 + rel * rel_F_boost)
@@ -296,7 +293,6 @@ with tabs[2]:
             secrecy_factor_F=secrecy_factor_F, secrecy_blur=secrecy_blur
         )
 
-    # store
     st.session_state.inputs = dict(
         L=L, P=P, C=C, D=D, secret=secret, reliability=reliability,
         mu=mu, W_A=W_A, S=S, m0_base=m0_base, g_shift=g_shift,
@@ -316,8 +312,7 @@ with tabs[3]:
         st.warning("Set parameters in the Inputs tab first.")
     else:
         res = st.session_state.compute_current()
-        d = res["derived"]
-        t = res["threshold"]
+        d = res["derived"]; t = res["threshold"]
         c1, c2, c3 = st.columns(3)
         with c1:
             st.metric("π(d) (beliefs)", f"{d['pi(d)']:.3f}")
@@ -366,7 +361,7 @@ with tabs[4]:
                 res = compute_current(L_=float(v))
             elif axis == "Provisions (P)":
                 res = compute_current(P_=float(v))
-            else:  # Secrecy toggle (0=public,1=secret)
+            else:
                 res = compute_current(secret_flag=(v>=0.5))
 
             pis.append(res["derived"]["pi(d)"])
@@ -386,8 +381,8 @@ with tabs[5]:
     else:
         compute_current = st.session_state.compute_current
         axes = ["Reliability", "Power (C)", "Democracy (D)", "Institutionalization (L)", "Provisions (P)", "Secrecy"]
-        ax_x = st.selectbox("X‑axis", axes, index=0)
-        ax_y = st.selectbox("Y‑axis", axes, index=3)
+        ax_x = st.selectbox("X-axis", axes, index=0)
+        ax_y = st.selectbox("Y-axis", axes, index=3)
         if ax_x == ax_y:
             st.warning("Pick two different axes.")
         else:
@@ -428,76 +423,71 @@ with tabs[5]:
             fig_pi = heatmap(Z_pi, xs, ys, f"π(d) across {ax_x} (X) and {ax_y} (Y)", ax_x, ax_y)
             fig_pistar = heatmap(Z_pistar, xs, ys, f"π* across {ax_x} (X) and {ax_y} (Y)", ax_x, ax_y)
             fig_rebel = heatmap(Z_rebel, xs, ys, f"Rebellion (1=yes) across {ax_x} (X) and {ax_y} (Y)", ax_x, ax_y)
-            st.pyplot(fig_pi)
-            st.pyplot(fig_pistar)
-            st.pyplot(fig_rebel)
+            st.pyplot(fig_pi); st.pyplot(fig_pistar); st.pyplot(fig_rebel)
 
 # ---------------------- Tab 7: Scenario Lab (multi) ----------------------
 with tabs[6]:
-    st.subheader("Compare multiple characteristics at once")
+    st.subheader("Compare multiple characteristics at once (1–3 axes)")
     if "compute_current" not in st.session_state:
         st.warning("Set parameters in the Inputs tab first.")
     else:
         compute_current = st.session_state.compute_current
-        st.markdown("Pick up to **three** axes to vary; others held at baseline.")
+        st.markdown("Pick **one to three** axes to vary; others held at baseline.")
 
         axes_all = ["Reliability", "Power (C)", "Democracy (D)", "Institutionalization (L)", "Provisions (P)", "Secrecy"]
         chosen = st.multiselect("Axes", axes_all, default=["Reliability", "Institutionalization (L)"])
-        npts = st.slider("Grid points per axis", 5, 30, 10, 1)
         chosen = chosen[:3]
+        if len(chosen) == 0:
+            st.info("Select at least one axis.")
+        else:
+            npts = st.slider("Grid points per chosen axis", 5, 30, 10, 1)
+            grids = {ax: np.linspace(0, 1, npts) for ax in chosen}
 
-        grids = {ax: np.linspace(0, 1, npts) for ax in chosen}
-        rows = []
-        for r in grids.get(chosen[0], [0.0]):
-            for s in grids.get(chosen[1], [0.0]):
-                for t in grids.get(chosen[2], [0.0]):
-                    kwargs = {}
-                    for ax, val in zip(chosen, [r, s, t]):
-                        if ax == "Reliability":
-                            kwargs["reliability_override"] = float(val)
-                        elif ax == "Power (C)":
-                            kwargs["C_"] = float(val)
-                        elif ax == "Democracy (D)":
-                            kwargs["D_"] = float(val)
-                        elif ax == "Institutionalization (L)":
-                            kwargs["L_"] = float(val)
-                        elif ax == "Provisions (P)":
-                            kwargs["P_"] = float(val)
-                        elif ax == "Secrecy":
-                            kwargs["secret_flag"] = (val >= 0.5)
-                    res = compute_current(**kwargs)
-                    rows.append({
-                        "Reliability": r if "Reliability" in chosen else np.nan,
-                        "C": s if "Power (C)" in chosen else np.nan,
-                        "D": t if "Democracy (D)" in chosen else np.nan,
-                        "L": r if "Institutionalization (L)" in chosen and chosen.index("Institutionalization (L)")==0 else
-                             s if "Institutionalization (L)" in chosen and chosen.index("Institutionalization (L)")==1 else
-                             t if "Institutionalization (L)" in chosen and chosen.index("Institutionalization (L)")==2 else np.nan,
-                        "P": r if "Provisions (P)" in chosen and chosen.index("Provisions (P)")==0 else
-                             s if "Provisions (P)" in chosen and chosen.index("Provisions (P)")==1 else
-                             t if "Provisions (P)" in chosen and chosen.index("Provisions (P)")==2 else np.nan,
-                        "Secrecy": r if "Secrecy" in chosen and chosen.index("Secrecy")==0 else
-                                   s if "Secrecy" in chosen and chosen.index("Secrecy")==1 else
-                                   t if "Secrecy" in chosen and chosen.index("Secrecy")==2 else np.nan,
-                        "pi(d)": res["derived"]["pi(d)"],
-                        "pi_true": res["derived"]["pi_true"],
-                        "pi*": res["threshold"]["pi_star"] if res["threshold"]["pi_star"] is not None else np.nan,
-                        "rebel": 1 if res["decision"]["rebel"] else 0
-                    })
+            rows = []
+            for combo in product(*[grids[ax] for ax in chosen]):
+                kwargs = {}
+                # fill kwargs per chosen axis
+                for ax, val in zip(chosen, combo):
+                    if ax == "Reliability":
+                        kwargs["reliability_override"] = float(val)
+                    elif ax == "Power (C)":
+                        kwargs["C_"] = float(val)
+                    elif ax == "Democracy (D)":
+                        kwargs["D_"] = float(val)
+                    elif ax == "Institutionalization (L)":
+                        kwargs["L_"] = float(val)
+                    elif ax == "Provisions (P)":
+                        kwargs["P_"] = float(val)
+                    elif ax == "Secrecy":
+                        kwargs["secret_flag"] = (val >= 0.5)
+                res = compute_current(**kwargs)
 
-        df = pd.DataFrame(rows)
-        st.dataframe(df.head(20))
+                # build a clean row with NaNs for unselected axes
+                rec = {"Reliability": np.nan, "C": np.nan, "D": np.nan, "L": np.nan, "P": np.nan, "Secrecy": np.nan}
+                for ax, val in zip(chosen, combo):
+                    key = {"Reliability":"Reliability","Power (C)":"C","Democracy (D)":"D","Institutionalization (L)":"L","Provisions (P)":"P","Secrecy":"Secrecy"}[ax]
+                    rec[key] = val
+                rec.update({
+                    "pi(d)": res["derived"]["pi(d)"],
+                    "pi_true": res["derived"]["pi_true"],
+                    "pi*": res["threshold"]["pi_star"] if res["threshold"]["pi_star"] is not None else np.nan,
+                    "rebel": 1 if res["decision"]["rebel"] else 0
+                })
+                rows.append(rec)
 
-        # Summaries
-        for metric in ["pi(d)", "pi*", "rebel"]:
-            for ax in chosen:
-                colname = {"Reliability":"Reliability","Power (C)":"C","Democracy (D)":"D","Institutionalization (L)":"L","Provisions (P)":"P","Secrecy":"Secrecy"}[ax]
-                sub = df[[colname, metric]].dropna()
-                if len(sub)==0: 
-                    continue
-                gb = sub.groupby(colname)[metric].mean().reset_index().sort_values(colname)
-                fig = line_plot(gb[colname].values, [gb[metric].values], [metric], f"{metric} vs {ax} (averaged over others)", ax, metric)
-                st.pyplot(fig)
+            df = pd.DataFrame(rows)
+            st.dataframe(df.head(20))
+
+            # Summaries by chosen axes
+            for metric in ["pi(d)", "pi*", "rebel"]:
+                for ax in chosen:
+                    colname = {"Reliability":"Reliability","Power (C)":"C","Democracy (D)":"D","Institutionalization (L)":"L","Provisions (P)":"P","Secrecy":"Secrecy"}[ax]
+                    sub = df[[colname, metric]].dropna()
+                    if len(sub) == 0:
+                        continue
+                    gb = sub.groupby(colname)[metric].mean().reset_index().sort_values(colname)
+                    fig = line_plot(gb[colname].values, [gb[metric].values], [metric], f"{metric} vs {ax} (avg over others)", ax, metric)
+                    st.pyplot(fig)
 
 # ---------------------- Tab 8: Export ----------------------
 with tabs[7]:
