@@ -263,7 +263,7 @@ with tabs[1]:
     st.latex(r"p_R(\tau)=\frac{\rho(d)}{\rho(d)+\tau},\quad \rho(d)=\sqrt{\frac{v_R\,c_G(d)}{v_G\,c_R}}")
     st.latex(r"W_R(\tau;d)=v_R\,\frac{\rho(d)\left(\rho(d)+\tfrac12\tau\right)}{(\rho(d)+\tau)^2}")
     st.latex(r"\Delta_A(\theta,d)=W_A\,[\,p_R(1)-p_R(\lambda(\theta,d))\,]+F(d)")
-    st.latex(r"I^*(\theta,d)=\mathbbm{1}\{\Delta_A(\theta,d)\ge K_A(\theta)\},\quad \pi(d)=\mu I^*(H,d)+(1-\mu)I^*(L,d)")
+    st.latex(r"I^*(\theta,d)=\mathbf{1}\{\Delta_A(\theta,d)\ge K_A(\theta)\},\quad \pi(d)=\mu I^*(H,d)+(1-\mu)I^*(L,d)")
     st.latex(r"\mathbb E[U_R\mid m{=}1,d]=(1-\pi)W_R(1;d)+\pi\,\overline W_R^{\,I}(d)-m_0(d)+g(d)")
     st.latex(r"\text{Rebels mobilize iff } \mathbb E[U_R\mid m{=}1,d]\ge S.")
     st.markdown(
@@ -393,8 +393,10 @@ with tabs[3]:
         with colB:
             st.metric("EU if rebels mobilize", f"{res['derived']['EU_m1']:.3f}")
             st.metric("Status quo S", f"{args['S']:.3f}")
-            st.success("Prediction: **REBEL**") if res["decision"]["rebel"] else st.info("Prediction: **NO REBELLION**")
-
+            if res["decision"]["rebel"]:
+                st.success("Prediction: **REBEL**")
+            else:
+                st.info("Prediction: **NO REBELLION**")
         with st.expander("Show all computed values (JSON)"):
             st.code(json.dumps(res, indent=2))
 
