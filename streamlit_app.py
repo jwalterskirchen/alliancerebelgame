@@ -1,17 +1,7 @@
 
 # streamlit_app.py
-# Rebel–Alliance Deterrence Model: a simple step-by-step app
-# Author: (Your name or institution)
+# Rebel–Alliance Deterrence Model: v3 with 2D Explore + fixes
 # License: MIT
-#
-# This app implements a three-player game (Government, Rebels, Alliance/Ally)
-# and simulates the rebels' mobilization decision as a function of alliance design.
-#
-# It follows the model laid out in the accompanying README and in-app overview.
-#
-# Run locally:
-#   pip install -r requirements.txt
-#   streamlit run streamlit_app.py
 
 import streamlit as st
 import numpy as np
@@ -20,7 +10,6 @@ import json
 import math
 import matplotlib.pyplot as plt
 
-# ---------------------- Streamlit setup ----------------------
 st.set_page_config(
     page_title="Rebel–Alliance Deterrence Model",
     page_icon="🛡️",
@@ -29,57 +18,39 @@ st.set_page_config(
 )
 
 # ---------------------- Utility & math ----------------------
-def clamp(x, lo, hi):
-    return max(lo, min(hi, x))
-
 def rho(v_R, v_G, c_R, c_G):
-    # relative "offense–defense" index
-    # rho(d) = sqrt((v_R * c_G(d)) / (v_G * c_R))
     return math.sqrt(max(1e-12, (v_R * c_G) / (v_G * c_R)))
 
 def pR(tau, rho_val):
-    # rebel victory probability at the war-stage equilibrium
-    # p_R(τ) = ρ / (ρ + τ)
     return rho_val / (rho_val + tau)
 
 def WR(tau, rho_val, v_R):
-    # rebels' equilibrium contest payoff (pre status-quo terms)
-    # W_R(τ;d) = v_R * [ ρ (ρ + τ/2) ] / (ρ + τ)^2
     num = rho_val * (rho_val + 0.5 * tau)
     den = (rho_val + tau) ** 2
     return v_R * num / den
 
 def lambda_base(L, C, l0, lL, lC):
-    # intervene effectiveness base (must be > 1)
-    val = 1.0 + l0 + lL * L + lC * C
-    return max(1.01, val)
+    return max(1.01, 1.0 + l0 + lL * L + lC * C)
 
 def lambda_type(lam_base, kappa):
-    # type-specific multiplier (ensure > 1.01)
     return max(1.01, lam_base * kappa)
 
 def cG(cG0, P, L, alphaP, betaL):
-    # government marginal coercion cost under provisions & institutionalization
-    # c_G(d) = cG0 * (1 + α_P P - β_L L), bounded below
     mult = 1.0 + alphaP * P - betaL * L
     return max(1e-6, cG0 * mult)
 
 def F_design(F0, L, P, D, fL, fP, fD):
-    # reneging/obligation penalty as a function of design & partner regime
     return max(0.0, F0 + fL * L + fP * P + fD * D)
 
 def K_cost(baseline, L, C, D, kL, kC, kD):
-    # ally's cost of intervention
-    # decreases with L and C, increases with D (audience/casualty aversion)
     return max(0.0, baseline - kL * L - kC * C + kD * D)
 
 def m0_cost(m0_base, P, mP):
-    # fixed mobilization cost (falls with liberalizing provisions)
     return max(0.0, m0_base * (1.0 - mP * P))
 
 def compute_all(
     # design axes
-    L, P, C, D,
+    L, P, C, D, secret,
     # context & baselines
     v_R, v_G, c_R, cG0,
     mu, W_A, S, m0_base, g_shift,
@@ -88,9 +59,10 @@ def compute_all(
     l0, lL, lC, kappa_H, kappa_L,
     alphaP, betaL,
     K_H0, K_L0, kL, kC, kD,
-    mP
+    mP,
+    secrecy_factor_F=0.25,   # how much secrecy reduces observable/operative F
+    secrecy_blur=0.0         # how much secrecy dampens perceived π towards μ (0=no blur, 1=full blur)
 ):
-    # Derived design-dependent primitives
     lam_base = lambda_base(L, C, l0, lL, lC)
     lam_H = lambda_type(lam_base, kappa_H)
     lam_L = lambda_type(lam_base, kappa_L)
@@ -98,16 +70,17 @@ def compute_all(
     cG_val = cG(cG0, P, L, alphaP, betaL)
     rho_val = rho(v_R, v_G, c_R, cG_val)
 
-    F_val = F_design(F0, L, P, D, fL, fP, fD)
+    F_val_raw = F_design(F0, L, P, D, fL, fP, fD)
+    F_val = F_val_raw * (secrecy_factor_F if secret else 1.0)
+
     K_H = K_cost(K_H0, L, C, D, kL, kC, kD)
     K_L = K_cost(K_L0, L, C, D, kL, kC, kD)
 
-    # War-stage values
+    # War-stage pieces
     W1 = WR(1.0, rho_val, v_R)
     WH = WR(lam_H, rho_val, v_R)
     WL = WR(lam_L, rho_val, v_R)
 
-    # Ally intervention net advantage by type
     pR_noI = pR(1.0, rho_val)
     pR_lamH = pR(lam_H, rho_val)
     pR_lamL = pR(lam_L, rho_val)
@@ -118,7 +91,8 @@ def compute_all(
     I_H = 1 if Delta_H >= K_H else 0
     I_L = 1 if Delta_L >= K_L else 0
 
-    pi = mu * I_H + (1 - mu) * I_L
+    pi_true = mu * I_H + (1 - mu) * I_L
+    pi = (1 - secrecy_blur) * pi_true + secrecy_blur * mu  # secrecy makes beliefs revert toward μ
 
     # Average rebel payoff if intervention occurs (conditional on intervening types if any)
     if I_H + I_L > 0:
@@ -132,333 +106,408 @@ def compute_all(
             weight += (1 - mu)
         WR_Ibar = acc / max(1e-9, weight)
     else:
-        # Counterfactual mix (if no type would intervene at this design)
         WR_Ibar = mu * WH + (1 - mu) * WL
 
-    # Rebels' expected utility if they mobilize (given design d)
     m0 = m0_cost(m0_base, P, mP)
     EU_m1 = (1 - pi) * W1 + pi * WR_Ibar - m0 + g_shift
 
-    # Threshold logic
     denom = W1 - WR_Ibar
     numer = W1 - S - m0 + g_shift
 
-    threshold = None
-    threshold_note = ""
     if abs(denom) < 1e-9:
-        threshold = None
-        threshold_note = "Intervention does not change rebels' contest payoff (denominator ≈ 0); no π-threshold is defined—rebellion depends only on status-quo vs. mobilization cost."
+        pi_star = None
+        threshold_note = "Denominator ≈ 0; intervention leaves W_R unchanged."
+        inequality = "—"
     elif denom > 0:
-        threshold = numer / denom
-        threshold_note = "Intervention hurts rebels on average (denominator > 0). They rebel iff π ≤ π*."
+        pi_star = numer / denom
+        threshold_note = "Intervention hurts rebels on average; rebel iff π ≤ π*."
+        inequality = "≤"
     else:
-        threshold = numer / denom  # negative denominator
-        threshold_note = "Intervention helps rebels on average (denominator < 0). They rebel iff π ≥ π† (note inequality flips)."
+        pi_star = numer / denom
+        threshold_note = "Intervention helps rebels on average; rebel iff π ≥ π†."
+        inequality = "≥"
 
-    # Decision: rebel if EU_m1 ≥ S
     rebel = EU_m1 >= S
 
-    # Pack everything
-    out = {
-        "design": {"L": L, "P": P, "C": C, "D": D},
-        "context": {
-            "v_R": v_R, "v_G": v_G, "c_R": c_R, "c_G0": cG0,
-            "mu": mu, "W_A": W_A, "S": S, "m0_base": m0_base, "g_shift": g_shift
-        },
-        "mapping": {
-            "F0": F0, "fL": fL, "fP": fP, "fD": fD,
-            "l0": l0, "lL": lL, "lC": lC, "kappa_H": kappa_H, "kappa_L": kappa_L,
-            "alphaP": alphaP, "betaL": betaL,
-            "K_H0": K_H0, "K_L0": K_L0, "kL": kL, "kC": kC, "kD": kD,
-            "mP": mP
-        },
+    return {
+        "design": {"L": L, "P": P, "C": C, "D": D, "secret": bool(secret)},
         "derived": {
             "lambda_base": lam_base, "lambda_H": lam_H, "lambda_L": lam_L,
             "c_G(d)": cG_val, "rho(d)": rho_val,
-            "F(d)": F_val, "K_H": K_H, "K_L": K_L,
+            "F_raw": F_val_raw, "F_effective": F_val,
+            "K_H": K_H, "K_L": K_L,
             "pR_noI": pR_noI, "pR_lambda_H": pR_lamH, "pR_lambda_L": pR_lamL,
-            "W_R_noI": W1, "W_R_lambda_H": WH, "W_R_lambda_L": WL,
             "Delta_H": Delta_H, "Delta_L": Delta_L,
-            "I_H": I_H, "I_L": I_L, "pi(d)": pi,
-            "WR_Ibar": WR_Ibar, "EU_m1": EU_m1, "denom": denom, "numer": numer
+            "I_H": I_H, "I_L": I_L,
+            "pi_true": pi_true, "pi(d)": pi,
+            "WR_noI": W1, "WR_lambda_H": WH, "WR_lambda_L": WL,
+            "WR_Ibar": WR_Ibar,
+            "EU_m1": EU_m1, "denom": denom, "numer": numer
         },
-        "threshold": {"pi_star": threshold, "note": threshold_note},
+        "threshold": {"pi_star": pi_star, "note": threshold_note, "ineq": inequality},
+        "context": {"mu": mu, "W_A": W_A, "S": S, "m0_base": m0_base, "g_shift": g_shift},
         "decision": {"rebel": bool(rebel)}
     }
-    return out
 
-def plot_pi_vs_threshold(xgrid, xname, compute_fn):
-    # Build series: π(d), π*(d) (or flipped threshold), rebellion indicator
-    pis = []
-    pistars = []
-    rebel_flags = []
-    flip_flags = []
-    for x in xgrid:
-        res = compute_fn(x)
-        pi = res["derived"]["pi(d)"]
-        pi_star = res["threshold"]["pi_star"]
-        note = res["threshold"]["note"]
-        rebel = res["decision"]["rebel"]
-        pis.append(pi)
-        pistars.append(pi_star if pi_star is not None else np.nan)
-        rebel_flags.append(1 if rebel else 0)
-        flip_flags.append(1 if "flips" in note or "denominator < 0" in note else 0)
+# Simple line plot helper
+def line_plot(x, ys, labels, title, xlabel, ylabel):
+    fig, ax = plt.subplots()
+    for y, lab in zip(ys, labels):
+        ax.plot(x, y, label=lab)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.legend()
+    return fig
 
-    df = pd.DataFrame({xname: xgrid, "pi(d)": pis, "pi_threshold": pistars, "rebel": rebel_flags, "flip": flip_flags})
-
-    # Plot π and π*
-    fig1, ax1 = plt.subplots()
-    ax1.plot(df[xname], df["pi(d)"], label="π(d) (ally shows up)")
-    ax1.plot(df[xname], df["pi_threshold"], label="π* (deterrence threshold)")
-    ax1.set_xlabel(xname)
-    ax1.set_ylabel("Probability / Threshold")
-    ax1.set_title(f"π(d) vs threshold across {xname}")
-    ax1.legend()
-
-    # Plot rebellion indicator
-    fig2, ax2 = plt.subplots()
-    ax2.plot(df[xname], df["rebel"], label="Rebellion occurs (1=yes)")
-    ax2.set_xlabel(xname)
-    ax2.set_ylabel("0/1")
-    ax2.set_title(f"Predicted rebellion across {xname}")
-    ax2.legend()
-
-    return df, (fig1, fig2)
+# Heatmap helper
+def heatmap(Z, xvals, yvals, title, xlabel, ylabel):
+    fig, ax = plt.subplots()
+    im = ax.imshow(Z, origin="lower", extent=[xvals.min(), xvals.max(), yvals.min(), yvals.max()], aspect="auto")
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    fig.colorbar(im, ax=ax)
+    return fig
 
 # ---------------------- UI ----------------------
-st.title("🛡️ Rebel–Alliance Deterrence Model")
-st.caption("A compact, deployable Streamlit app that walks through the three‑player game and lets you simulate how alliance design affects rebels' mobilization.")
+st.title("🛡️ Rebel–Alliance Deterrence Model (v3)")
+st.caption("Adds a 2D Explore tab + fixes reliability/effectiveness overrides.")
 
 tabs = st.tabs([
     "1) Overview",
-    "2) Model & Assumptions",
-    "3) Choose Alliance & Context",
+    "2) Model",
+    "3) Inputs",
     "4) Results",
-    "5) Explore",
-    "6) Export / Save"
+    "5) Explore (1D)",
+    "6) Explore (2D)",
+    "7) Scenario Lab (multi)",
+    "8) Export"
 ])
 
 # ---------------------- Tab 1: Overview ----------------------
 with tabs[0]:
-    st.subheader("Players, sequence, and intuition")
+    st.subheader("What’s new in v3")
     st.markdown(
         """
-        **Players.** Government (G), potential rebels (R), and an ally/alliance (A).  
-        **Sequence.** The ally chooses an observable design **d** (obligations, institutionalization, provisions, partner traits). Rebels observe **d** and decide whether to mobilize. If they rebel, the ally decides whether to **intervene**; then G and R fight a contest.
-
-        The alliance design affects three levers:
-        1. **Resolve / obligations (F(d))** → how costly it is for the ally not to help;
-        2. **Effectiveness (λ(d))** → how much allied intervention tilts the battlefield;
-        3. **Constraints on G (c_G(d))** → provisions/conditionality that raise the state's cost of coercion.
-
-        Rebels compare their expected payoff from mobilizing to their status‑quo payoff **S**. A high perceived intervention probability **π(d)** and a highly effective ally (**λ**) can deter rebellion; constraints that raise the government's costs can cut the other way.
+        - **2D Explore**: vary two characteristics at once and view heatmaps for π(d), π*, and the rebellion prediction.  
+        - **Fixes**: reliability and effectiveness overrides now correctly affect calculations in Explore and Scenario Lab.
         """
     )
-    st.markdown("---")
-    st.markdown("Use the tabs to **read the model**, **set parameters**, **see results**, and **explore scenarios**.")
+    st.write("Set baseline in **Inputs**. Use **Explore (1D)** or **Explore (2D)** to analyze deterrence geometry.")
 
 # ---------------------- Tab 2: Model ----------------------
 with tabs[1]:
-    st.subheader("Key equations (peace, war, and deterrence)")
     st.latex(r"p_R(\tau)=\frac{\rho(d)}{\rho(d)+\tau},\quad \rho(d)=\sqrt{\frac{v_R\,c_G(d)}{v_G\,c_R}}")
     st.latex(r"W_R(\tau;d)=v_R\,\frac{\rho(d)\left(\rho(d)+\tfrac12\tau\right)}{(\rho(d)+\tau)^2}")
     st.latex(r"\Delta_A(\theta,d)=W_A\,[\,p_R(1)-p_R(\lambda(\theta,d))\,]+F(d)")
-    st.latex(r"I^*(\theta,d)=\mathbf{1}\{\Delta_A(\theta,d)\ge K_A(\theta)\},\quad \pi(d)=\mu I^*(H,d)+(1-\mu)I^*(L,d)")
+    st.latex(r"I^*(\theta,d)=\mathbbm{1}\{\Delta_A(\theta,d)\ge K_A(\theta)\},\quad \pi(d)=\mu I^*(H,d)+(1-\mu)I^*(L,d)")
     st.latex(r"\mathbb E[U_R\mid m{=}1,d]=(1-\pi)W_R(1;d)+\pi\,\overline W_R^{\,I}(d)-m_0(d)+g(d)")
-    st.latex(r"\text{Rebels mobilize iff } \mathbb E[U_R\mid m{=}1,d]\ge S.")
-    st.markdown(
-        """
-        When intervention **hurts** rebels on average (\\(W_R(1;d)>\overline W_R^{\,I}(d)\\)), the deterrence
-        condition is a simple threshold:
-        """
-    )
-    st.latex(r"\pi(d)\le \pi^*(d)\equiv\frac{W_R(1;d)-S-m_0(d)+g(d)}{W_R(1;d)-\overline W_R^{\,I}(d)}")
-    st.markdown(
-        """
-        If intervention **helps** rebels on average (rare but possible under strong constraints), the inequality flips:
-        rebels mobilize when \\( \pi(d)\ge \pi^\dagger(d) \\). The app detects and reports which case you're in.
-        """
-    )
-    with st.expander("How design features map into primitives", expanded=False):
-        st.markdown(
-            """
-            - **Legalization & institutionalization (L)** → raises **F(d)** and **λ(d)**; may lower \\(c_G(d)\\).
-            - **Provisions/conditionality (P)** → raise \\(c_G(d)\\) (harder repression), can raise **F(d)**.
-            - **Partner capability/proximity (C)** → raises **λ(d)**, lowers the ally's **K_A(θ)**.
-            - **Partner democracy (D)** → raises **F(d)** (audience/legal costs) and can raise **K_A(θ)** (casualty aversion).
-            """
-        )
-    st.info("All mapping coefficients are editable in the next tab (Advanced).")
 
 # ---------------------- Tab 3: Inputs ----------------------
 with tabs[2]:
-    st.subheader("Step 1 — Choose alliance design and partner characteristics")
-    col1, col2 = st.columns(2)
-    with col1:
-        L = st.slider("Legalization & institutionalization (L)", 0.0, 1.0, 0.6, 0.01)
+    st.subheader("Alliance design & partner traits")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        L = st.slider("Institutionalization / legalization (L)", 0.0, 1.0, 0.6, 0.01)
         P = st.slider("Provisions / conditionality (P)", 0.0, 1.0, 0.3, 0.01)
-        C = st.slider("Partner capability/proximity (C)", 0.0, 1.0, 0.7, 0.01)
-        D = st.slider("Partner democracy (D)", 0.0, 1.0, 0.7, 0.01)
+        C = st.slider("Power: capability / proximity (C)", 0.0, 1.0, 0.7, 0.01)
+    with c2:
+        D = st.slider("Democracy of partner (D)", 0.0, 1.0, 0.7, 0.01)
+        reliability = st.slider("Reliability (affects F and K_A)", 0.0, 1.0, 0.7, 0.01)
+        secret = st.checkbox("Secret / non-public alliance features", value=False)
+    with c3:
+        mu = st.slider("Prior: High-type probability μ", 0.0, 1.0, 0.5, 0.01)
+        W_A = st.slider("Ally alignment W_A", 0.0, 3.0, 1.0, 0.05)
+        S = st.slider("Rebels' status-quo S", -1.0, 2.0, 0.2, 0.05)
+        m0_base = st.slider("Baseline mobilization cost m₀", 0.0, 2.0, 0.2, 0.01)
+        g_shift = st.slider("Grievance shift g(d)", -1.0, 1.0, 0.0, 0.05)
 
-    with col2:
-        st.markdown("#### Context & payoffs")
-        mu = st.slider("Prior that the ally is high capability/resolve (μ)", 0.0, 1.0, 0.5, 0.01)
-        W_A = st.slider("Ally's value alignment W_A", 0.0, 3.0, 1.0, 0.05)
-        S = st.slider("Rebels' status‑quo payoff S", -1.0, 2.0, 0.2, 0.05)
-        m0_base = st.slider("Baseline mobilization cost m₀ (before provisions)", 0.0, 2.0, 0.2, 0.01)
-        g_shift = st.slider("Grievance shift g(d) (e.g., unpopular patron)", -1.0, 1.0, 0.0, 0.05)
-
-    st.divider()
-    st.subheader("Step 2 — Advanced (optional)")
-    with st.expander("Game primitives", expanded=False):
-        colA, colB, colC = st.columns(3)
-        with colA:
-            v_R = st.number_input("v_R (rebels' value from victory)", value=1.0, min_value=0.01)
-            v_G = st.number_input("v_G (government's value from victory)", value=1.0, min_value=0.01)
-        with colB:
-            c_R = st.number_input("c_R (rebels' marginal effort cost)", value=1.0, min_value=0.001)
-            cG0 = st.number_input("c_G0 (government baseline marginal effort cost)", value=1.0, min_value=0.001)
-        with colC:
-            st.markdown("—")
-
-    with st.expander("Design → primitives mapping coefficients", expanded=False):
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            F0 = st.number_input("F0 base reneging penalty", value=0.0)
-            fL = st.number_input("fL (L → F)", value=1.0)
-            fP = st.number_input("fP (P → F)", value=0.5)
-            fD = st.number_input("fD (D → F)", value=1.0)
-        with col2:
-            l0 = st.number_input("l0 (base λ offset)", value=0.2, help="Ensures λ>1 even at minimal design")
-            lL = st.number_input("lL (L → λ)", value=0.8)
-            lC = st.number_input("lC (C → λ)", value=1.0)
-            kappa_H = st.number_input("κ_H (ally H type multiplier)", value=1.2, min_value=1.0)
-            kappa_L = st.number_input("κ_L (ally L type multiplier)", value=1.0, min_value=1.0)
-        with col3:
-            alphaP = st.number_input("α_P (P → c_G)", value=1.0)
-            betaL = st.number_input("β_L (L → c_G)", value=0.2)
-            mP = st.number_input("mP (P lowers m₀ by factor)", value=0.5, min_value=0.0, max_value=1.0)
-        with col4:
-            K_H0 = st.number_input("K_H0 (ally H baseline cost)", value=0.8, min_value=0.0)
-            K_L0 = st.number_input("K_L0 (ally L baseline cost)", value=1.5, min_value=0.0)
+    st.markdown("### Advanced coefficients")
+    with st.expander("Mapping & costs", expanded=False):
+        cA, cB, cC, cD = st.columns(4)
+        with cA:
+            v_R = st.number_input("v_R", value=1.0, min_value=0.01)
+            v_G = st.number_input("v_G", value=1.0, min_value=0.01)
+            c_R = st.number_input("c_R", value=1.0, min_value=0.001)
+            cG0 = st.number_input("c_G0", value=1.0, min_value=0.001)
+        with cB:
+            F0 = st.number_input("F0", value=0.0)
+            fL = st.number_input("fL (L→F)", value=1.0)
+            fP = st.number_input("fP (P→F)", value=0.5)
+            fD = st.number_input("fD (D→F)", value=1.0)
+        with cC:
+            l0 = st.number_input("l0 (base λ offset)", value=0.2)
+            lL = st.number_input("lL (L→λ)", value=0.8)
+            lC = st.number_input("lC (C→λ)", value=1.0)
+            kappa_H = st.number_input("κ_H", value=1.2, min_value=1.0)
+            kappa_L = st.number_input("κ_L", value=1.0, min_value=1.0)
+        with cD:
+            alphaP = st.number_input("α_P (P→c_G)", value=1.0)
+            betaL = st.number_input("β_L (L→c_G)", value=0.2)
+            K_H0 = st.number_input("K_H0", value=0.8, min_value=0.0)
+            K_L0 = st.number_input("K_L0", value=1.5, min_value=0.0)
             kL = st.number_input("kL (L lowers K_A)", value=0.6, min_value=0.0)
             kC = st.number_input("kC (C lowers K_A)", value=0.8, min_value=0.0)
             kD = st.number_input("kD (D raises K_A)", value=0.5, min_value=0.0)
 
-    # Store in session state for downstream tabs
+    with st.expander("Reliability & secrecy mechanics", expanded=False):
+        secrecy_factor_F = st.slider("Secrecy factor on F (0=erase,1=no change)", 0.0, 1.0, 0.25, 0.05)
+        secrecy_blur = st.slider("Secrecy belief blur toward μ", 0.0, 1.0, 0.3, 0.05)
+        rel_F_boost = st.slider("Reliability boost to F", 0.0, 2.0, 1.0, 0.05)
+        rel_K_cut = st.slider("Reliability cut to K_A", 0.0, 2.0, 0.5, 0.05)
+        # We fold 'reliability' into F and K_A downstream
+
+    # compute wrapper with overrides
+    def compute_current(
+        secret_flag=None,
+        reliability_override=None,
+        L_=None, P_=None, C_=None, D_=None,
+        l0_override=None, lL_override=None, lC_override=None
+    ):
+        Lx = L if L_ is None else L_
+        Px = P if P_ is None else P_
+        Cx = C if C_ is None else C_
+        Dx = D if D_ is None else D_
+        sec = secret if secret_flag is None else secret_flag
+        rel = reliability if reliability_override is None else reliability_override
+
+        # apply reliability to F coefficients and K baselines
+        F0_eff = F0
+        fL_eff = fL * (1.0 + rel * rel_F_boost)
+        fP_eff = fP * (1.0 + rel * rel_F_boost)
+        fD_eff = fD * (1.0 + rel * rel_F_boost)
+
+        K_H0_eff = max(0.0, K_H0 * (1.0 - rel * rel_K_cut))
+        K_L0_eff = max(0.0, K_L0 * (1.0 - rel * rel_K_cut))
+
+        l0_use = l0 if l0_override is None else l0_override
+        lL_use = lL if lL_override is None else lL_override
+        lC_use = lC if lC_override is None else lC_override
+
+        return compute_all(
+            L=Lx, P=Px, C=Cx, D=Dx, secret=sec,
+            v_R=v_R, v_G=v_G, c_R=c_R, cG0=cG0,
+            mu=mu, W_A=W_A, S=S, m0_base=m0_base, g_shift=g_shift,
+            F0=F0_eff, fL=fL_eff, fP=fP_eff, fD=fD_eff,
+            l0=l0_use, lL=lL_use, lC=lC_use, kappa_H=kappa_H, kappa_L=kappa_L,
+            alphaP=alphaP, betaL=betaL, K_H0=K_H0_eff, K_L0=K_L0_eff, kL=kL, kC=kC, kD=kD,
+            mP=0.5,
+            secrecy_factor_F=secrecy_factor_F, secrecy_blur=secrecy_blur
+        )
+
+    # store
     st.session_state.inputs = dict(
-        L=L, P=P, C=C, D=D, v_R=v_R, v_G=v_G, c_R=c_R, cG0=cG0,
+        L=L, P=P, C=C, D=D, secret=secret, reliability=reliability,
         mu=mu, W_A=W_A, S=S, m0_base=m0_base, g_shift=g_shift,
+        v_R=v_R, v_G=v_G, c_R=c_R, cG0=cG0,
         F0=F0, fL=fL, fP=fP, fD=fD,
         l0=l0, lL=lL, lC=lC, kappa_H=kappa_H, kappa_L=kappa_L,
         alphaP=alphaP, betaL=betaL, K_H0=K_H0, K_L0=K_L0, kL=kL, kC=kC, kD=kD,
-        mP=mP
+        secrecy_factor_F=secrecy_factor_F, secrecy_blur=secrecy_blur,
+        rel_F_boost=rel_F_boost, rel_K_cut=rel_K_cut
     )
+    st.session_state.compute_current = compute_current
 
 # ---------------------- Tab 4: Results ----------------------
 with tabs[3]:
-    st.subheader("Results at your chosen design d")
-    if "inputs" not in st.session_state:
-        st.warning("Set parameters in the previous tab first.")
+    st.subheader("Point prediction at your baseline design")
+    if "compute_current" not in st.session_state:
+        st.warning("Set parameters in the Inputs tab first.")
     else:
-        args = st.session_state.inputs
-        res = compute_all(**args)
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("π(d) — intervention probability", f"{res['derived']['pi(d)']:.3f}")
-            st.metric("λ_H", f"{res['derived']['lambda_H']:.3f}")
-            st.metric("λ_L", f"{res['derived']['lambda_L']:.3f}")
-            st.metric("F(d)", f"{res['derived']['F(d)']:.3f}")
-        with col2:
-            st.metric("ρ(d)", f"{res['derived']['rho(d)']:.3f}")
-            st.metric("c_G(d)", f"{res['derived']['c_G(d)']:.3f}")
-            st.metric("p_R (no intervention)", f"{res['derived']['pR_noI']:.3f}")
-            st.metric("p_R (if intervene, H)", f"{res['derived']['pR_lambda_H']:.3f}")
-        with col3:
-            st.metric("Δ_A(H)", f"{res['derived']['Delta_H']:.3f}")
-            st.metric("Δ_A(L)", f"{res['derived']['Delta_L']:.3f}")
-            st.metric("I_H (1/0)", f"{res['derived']['I_H']}")
-            st.metric("I_L (1/0)", f"{res['derived']['I_L']}")
-
+        res = st.session_state.compute_current()
+        d = res["derived"]
+        t = res["threshold"]
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("π(d) (beliefs)", f"{d['pi(d)']:.3f}")
+            st.metric("π_true (objective)", f"{d['pi_true']:.3f}")
+            st.metric("λ_H", f"{d['lambda_H']:.3f}")
+            st.metric("λ_L", f"{d['lambda_L']:.3f}")
+        with c2:
+            st.metric("F_raw", f"{d['F_raw']:.3f}")
+            st.metric("F_effective", f"{d['F_effective']:.3f}")
+            st.metric("Δ_A(H)", f"{d['Delta_H']:.3f}")
+            st.metric("Δ_A(L)", f"{d['Delta_L']:.3f}")
+        with c3:
+            st.metric("ρ(d)", f"{d['rho(d)']:.3f}")
+            st.metric("p_R (no I)", f"{d['pR_noI']:.3f}")
+            st.metric("p_R (H intervenes)", f"{d['pR_lambda_H']:.3f}")
+            st.metric("p_R (L intervenes)", f"{d['pR_lambda_L']:.3f}")
         st.markdown("---")
-        colA, colB = st.columns(2)
-        with colA:
-            pi_star = res["threshold"]["pi_star"]
-            if pi_star is None:
-                st.info("π-threshold: undefined (intervention leaves W_R unchanged).")
-            else:
-                st.metric("π-threshold", f"{pi_star:.3f}")
-            st.caption(res["threshold"]["note"])
-        with colB:
-            st.metric("EU if rebels mobilize", f"{res['derived']['EU_m1']:.3f}")
-            st.metric("Status quo S", f"{args['S']:.3f}")
-            if res["decision"]["rebel"]:
-                st.success("Prediction: **REBEL**")
-            else:
-                st.info("Prediction: **NO REBELLION**")
-        with st.expander("Show all computed values (JSON)"):
+        st.metric("π-threshold", f"{t['pi_star']:.3f}" if t['pi_star'] is not None else "—")
+        st.caption(t["note"] + f" (Inequality: {t['ineq']})")
+        st.success("Prediction: **REBEL**") if res["decision"]["rebel"] else st.info("Prediction: **NO REBELLION**")
+        with st.expander("Raw JSON"):
             st.code(json.dumps(res, indent=2))
 
-# ---------------------- Tab 5: Explore ----------------------
+# ---------------------- Tab 5: Explore (1D) ----------------------
 with tabs[4]:
-    st.subheader("Explore how design axes shift deterrence")
-    if "inputs" not in st.session_state:
-        st.warning("Set parameters in the inputs tab first.")
+    st.subheader("Sweep a single characteristic")
+    if "compute_current" not in st.session_state:
+        st.warning("Set parameters in the Inputs tab first.")
     else:
-        args = st.session_state.inputs.copy()
-        axis = st.selectbox("Sweep which design variable?", ["L (legalization)", "P (provisions)", "C (capability/proximity)", "D (democracy)"])
-        npts = st.slider("Number of grid points", 10, 200, 60, 10)
-        xgrid = np.linspace(0, 1, npts)
-        if axis.startswith("L"):
-            xname = "L"
-        elif axis.startswith("P"):
-            xname = "P"
-        elif axis.startswith("C"):
-            xname = "C"
-        else:
-            xname = "D"
+        compute_current = st.session_state.compute_current
+        axis = st.selectbox("Sweep which?", ["Reliability", "Effectiveness (λ via l0)", "Power (C)", "Democracy (D)", "Institutionalization (L)", "Provisions (P)", "Secrecy toggle"])
+        npts = st.slider("Grid points", 10, 200, 60, 10)
+        xs = np.linspace(0, 1, npts)
 
-        def compute_at_x(x):
-            kwargs = args.copy()
-            kwargs["L"] = args["L"] if xname != "L" else float(x)
-            kwargs["P"] = args["P"] if xname != "P" else float(x)
-            kwargs["C"] = args["C"] if xname != "C" else float(x)
-            kwargs["D"] = args["D"] if xname != "D" else float(x)
-            return compute_all(**kwargs)
+        pis, pistars, rebels = [], [], []
+        for v in xs:
+            if axis == "Reliability":
+                res = compute_current(reliability_override=float(v))
+            elif axis == "Effectiveness (λ via l0)":
+                res = compute_current(l0_override=st.session_state.inputs["l0"] + (float(v)-0.5)*0.8)
+            elif axis == "Power (C)":
+                res = compute_current(C_=float(v))
+            elif axis == "Democracy (D)":
+                res = compute_current(D_=float(v))
+            elif axis == "Institutionalization (L)":
+                res = compute_current(L_=float(v))
+            elif axis == "Provisions (P)":
+                res = compute_current(P_=float(v))
+            else:  # Secrecy toggle (0=public,1=secret)
+                res = compute_current(secret_flag=(v>=0.5))
 
-        df, figs = plot_pi_vs_threshold(xgrid, xname, compute_at_x)
-        st.dataframe(df.head(10))
-        st.pyplot(figs[0])
-        st.pyplot(figs[1])
+            pis.append(res["derived"]["pi(d)"])
+            pistars.append(np.nan if res["threshold"]["pi_star"] is None else res["threshold"]["pi_star"])
+            rebels.append(1 if res["decision"]["rebel"] else 0)
 
-# ---------------------- Tab 6: Export ----------------------
+        fig1 = line_plot(xs, [pis, pistars], ["π(d)", "π*"], f"{axis}: π vs threshold", axis, "Probability / threshold")
+        fig2 = line_plot(xs, [rebels], ["Rebellion (1=yes)"], f"{axis}: rebellion prediction", axis, "0/1")
+        st.pyplot(fig1)
+        st.pyplot(fig2)
+
+# ---------------------- Tab 6: Explore (2D) ----------------------
 with tabs[5]:
-    st.subheader("Export your current scenario")
-    if "inputs" not in st.session_state:
+    st.subheader("Heatmaps: vary two characteristics at once")
+    if "compute_current" not in st.session_state:
+        st.warning("Set parameters in the Inputs tab first.")
+    else:
+        compute_current = st.session_state.compute_current
+        axes = ["Reliability", "Power (C)", "Democracy (D)", "Institutionalization (L)", "Provisions (P)", "Secrecy"]
+        ax_x = st.selectbox("X‑axis", axes, index=0)
+        ax_y = st.selectbox("Y‑axis", axes, index=3)
+        if ax_x == ax_y:
+            st.warning("Pick two different axes.")
+        else:
+            nx = st.slider("X resolution", 10, 100, 40, 5)
+            ny = st.slider("Y resolution", 10, 100, 40, 5)
+            xs = np.linspace(0, 1, nx)
+            ys = np.linspace(0, 1, ny)
+
+            Z_pi = np.zeros((ny, nx))
+            Z_pistar = np.zeros((ny, nx))
+            Z_rebel = np.zeros((ny, nx))
+
+            def apply_axis(val, axis, kwargs):
+                if axis == "Reliability":
+                    kwargs["reliability_override"] = float(val)
+                elif axis == "Power (C)":
+                    kwargs["C_"] = float(val)
+                elif axis == "Democracy (D)":
+                    kwargs["D_"] = float(val)
+                elif axis == "Institutionalization (L)":
+                    kwargs["L_"] = float(val)
+                elif axis == "Provisions (P)":
+                    kwargs["P_"] = float(val)
+                elif axis == "Secrecy":
+                    kwargs["secret_flag"] = (val >= 0.5)
+                return kwargs
+
+            for iy, vy in enumerate(ys):
+                for ix, vx in enumerate(xs):
+                    kwargs = {}
+                    kwargs = apply_axis(vx, ax_x, kwargs)
+                    kwargs = apply_axis(vy, ax_y, kwargs)
+                    res = compute_current(**kwargs)
+                    Z_pi[iy, ix] = res["derived"]["pi(d)"]
+                    Z_pistar[iy, ix] = np.nan if res["threshold"]["pi_star"] is None else res["threshold"]["pi_star"]
+                    Z_rebel[iy, ix] = 1 if res["decision"]["rebel"] else 0
+
+            fig_pi = heatmap(Z_pi, xs, ys, f"π(d) across {ax_x} (X) and {ax_y} (Y)", ax_x, ax_y)
+            fig_pistar = heatmap(Z_pistar, xs, ys, f"π* across {ax_x} (X) and {ax_y} (Y)", ax_x, ax_y)
+            fig_rebel = heatmap(Z_rebel, xs, ys, f"Rebellion (1=yes) across {ax_x} (X) and {ax_y} (Y)", ax_x, ax_y)
+            st.pyplot(fig_pi)
+            st.pyplot(fig_pistar)
+            st.pyplot(fig_rebel)
+
+# ---------------------- Tab 7: Scenario Lab (multi) ----------------------
+with tabs[6]:
+    st.subheader("Compare multiple characteristics at once")
+    if "compute_current" not in st.session_state:
+        st.warning("Set parameters in the Inputs tab first.")
+    else:
+        compute_current = st.session_state.compute_current
+        st.markdown("Pick up to **three** axes to vary; others held at baseline.")
+
+        axes_all = ["Reliability", "Power (C)", "Democracy (D)", "Institutionalization (L)", "Provisions (P)", "Secrecy"]
+        chosen = st.multiselect("Axes", axes_all, default=["Reliability", "Institutionalization (L)"])
+        npts = st.slider("Grid points per axis", 5, 30, 10, 1)
+        chosen = chosen[:3]
+
+        grids = {ax: np.linspace(0, 1, npts) for ax in chosen}
+        rows = []
+        for r in grids.get(chosen[0], [0.0]):
+            for s in grids.get(chosen[1], [0.0]):
+                for t in grids.get(chosen[2], [0.0]):
+                    kwargs = {}
+                    for ax, val in zip(chosen, [r, s, t]):
+                        if ax == "Reliability":
+                            kwargs["reliability_override"] = float(val)
+                        elif ax == "Power (C)":
+                            kwargs["C_"] = float(val)
+                        elif ax == "Democracy (D)":
+                            kwargs["D_"] = float(val)
+                        elif ax == "Institutionalization (L)":
+                            kwargs["L_"] = float(val)
+                        elif ax == "Provisions (P)":
+                            kwargs["P_"] = float(val)
+                        elif ax == "Secrecy":
+                            kwargs["secret_flag"] = (val >= 0.5)
+                    res = compute_current(**kwargs)
+                    rows.append({
+                        "Reliability": r if "Reliability" in chosen else np.nan,
+                        "C": s if "Power (C)" in chosen else np.nan,
+                        "D": t if "Democracy (D)" in chosen else np.nan,
+                        "L": r if "Institutionalization (L)" in chosen and chosen.index("Institutionalization (L)")==0 else
+                             s if "Institutionalization (L)" in chosen and chosen.index("Institutionalization (L)")==1 else
+                             t if "Institutionalization (L)" in chosen and chosen.index("Institutionalization (L)")==2 else np.nan,
+                        "P": r if "Provisions (P)" in chosen and chosen.index("Provisions (P)")==0 else
+                             s if "Provisions (P)" in chosen and chosen.index("Provisions (P)")==1 else
+                             t if "Provisions (P)" in chosen and chosen.index("Provisions (P)")==2 else np.nan,
+                        "Secrecy": r if "Secrecy" in chosen and chosen.index("Secrecy")==0 else
+                                   s if "Secrecy" in chosen and chosen.index("Secrecy")==1 else
+                                   t if "Secrecy" in chosen and chosen.index("Secrecy")==2 else np.nan,
+                        "pi(d)": res["derived"]["pi(d)"],
+                        "pi_true": res["derived"]["pi_true"],
+                        "pi*": res["threshold"]["pi_star"] if res["threshold"]["pi_star"] is not None else np.nan,
+                        "rebel": 1 if res["decision"]["rebel"] else 0
+                    })
+
+        df = pd.DataFrame(rows)
+        st.dataframe(df.head(20))
+
+        # Summaries
+        for metric in ["pi(d)", "pi*", "rebel"]:
+            for ax in chosen:
+                colname = {"Reliability":"Reliability","Power (C)":"C","Democracy (D)":"D","Institutionalization (L)":"L","Provisions (P)":"P","Secrecy":"Secrecy"}[ax]
+                sub = df[[colname, metric]].dropna()
+                if len(sub)==0: 
+                    continue
+                gb = sub.groupby(colname)[metric].mean().reset_index().sort_values(colname)
+                fig = line_plot(gb[colname].values, [gb[metric].values], [metric], f"{metric} vs {ax} (averaged over others)", ax, metric)
+                st.pyplot(fig)
+
+# ---------------------- Tab 8: Export ----------------------
+with tabs[7]:
+    st.subheader("Export baseline and settings")
+    if "compute_current" not in st.session_state:
         st.warning("Set parameters first.")
     else:
-        args = st.session_state.inputs
-        res = compute_all(**args)
-
-        payload = {
-            "inputs": args,
-            "results": res
-        }
+        baseline = st.session_state.compute_current()
+        payload = {"inputs": st.session_state.inputs, "baseline": baseline}
         blob = json.dumps(payload, indent=2).encode("utf-8")
-        st.download_button(
-            "Download scenario JSON",
-            data=blob,
-            file_name="rebel_alliance_scenario.json",
-            mime="application/json"
-        )
-
+        st.download_button("Download baseline JSON", data=blob, file_name="baseline_scenario.json", mime="application/json")
     st.markdown("---")
-    st.markdown(
-        """
-        **How to deploy**  
-        1. Push `streamlit_app.py` and `requirements.txt` to a GitHub repo.  
-        2. On [Streamlit Community Cloud](https://streamlit.io/cloud), create an app, point it to your repo and `streamlit_app.py`.  
-        3. Click **Deploy**.
-        """
-    )
+    st.markdown("To deploy, push this file and `requirements.txt` to GitHub and use Streamlit Community Cloud.")
